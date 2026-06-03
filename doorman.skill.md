@@ -38,6 +38,7 @@ Brainstems meet as **uniform peers** speaking `rapp-twin-chat/1.0` — nobody ca
 
 - **WebRTC tether** (`5a-tether`) — direct browser↔browser P2P. The PeerJS public broker is used for the *handshake only* (SDP/ICE); data flows DTLS-encrypted P2P, the broker never sees it.
 - **Kite tether** (`5a-kite`) — an operator (you) holds the **string**: drives a browser tab's console over the Chrome DevTools Protocol and relays. No broker, no STUN, no CORS — you *are* the transport.
+- **MCP transport** (`rapp-mcp`) — an MCP host is just another caller of `/chat`: `rapp_brainstem_mcp.py` bridges the running local brainstem over the same `/chat` wire to any MCP client. This is **Layer-2 of "Chat Is The Only Wire"** (`rapp-mcp-spec/1.0`; static profile `rapp-static-mcp/1.0`) — a transport that *realizes* the same wire, **not** a new unit or kind. An MCP host that reaches a doorman-fronted brainstem is sealed exactly like any other caller.
 
 A **kited twin** is a tab flown on a kite string. It is **tethered** when the string also reaches *this machine's* local brainstem (`5a-kite+tether`) — its turns are answered by that brainstem; otherwise it's **just kited** (answered by the tab's own in-page brainstem).
 
@@ -49,7 +50,7 @@ A **kited twin** is a tab flown on a kite string. It is **tethered** when the st
 
 ## 2. Prerequisites
 
-1. **Local brainstem running.** `curl -s http://localhost:7077/health` should return `{"status":"ok",...}`. If it's down, find and start this machine's brainstem (a CommunityRAPP / `rapp_brainstem` install — typically a `brainstem.py` or the `rapp-brainstem` skill). If you can't find it, ask the user how to start it. (Set `BRAINSTEM_URL` if it's on another port.)
+1. **Local brainstem running.** A stock `rapp_brainstem` (`brainstem.py`) listens on **7071** by default (its canonical port) — `curl -s http://localhost:7071/health` should return `{"status":"ok",...}`. The doorman tooling here defaults `BRAINSTEM_URL` to `http://localhost:7077` (the vBrainstem-bridge convention); for a stock brainstem on 7071, set `BRAINSTEM_URL=http://localhost:7071`. If it's down, find and start this machine's brainstem (a CommunityRAPP / `rapp_brainstem` install — typically a `brainstem.py` or the `rapp-brainstem` skill). If you can't find it, ask the user how to start it. (Set `BRAINSTEM_URL` if it's on another port.)
 2. **Google Chrome or Chromium** (headless WebRTC + CDP). On macOS it's `/Applications/Google Chrome.app/...`; on Linux `google-chrome`/`chromium`. Export `CHROME=/path/to/chrome` if auto-detect fails.
 3. **Node ≥ 18** (`node -v`) — has built-in `WebSocket`/`fetch`/`crypto.subtle`, used by `kited_twin.js` and the sealed crypto.
 4. Fetch the tools when you need them:
@@ -73,7 +74,7 @@ open http://localhost:8123/brainstem_bridge.html   # macOS (Linux: xdg-open)
 # leave the URL at http://localhost:7077 → click “Host bridge”
 ```
 
-The page shows a **peer-id**, a **token**, and an **operator link**. Hand the operator link to the authorized visitor (same person/account) over a private channel; everything they send is sealed. *(The deployed HTTPS page is fine only when the target brainstem is itself reachable over HTTPS / a public URL — not for `http://localhost`.)*
+The page shows a **peer-id**, a **token**, and an **operator link** (the `op_link` field in the `host()` result — operator and visitor link are the same identifier). Hand the operator link (`op_link`) to the authorized visitor (same person/account) over a private channel; everything they send is sealed. *(The deployed HTTPS page is fine only when the target brainstem is itself reachable over HTTPS / a public URL — not for `http://localhost`.)*
 
 **Headless / programmatic (you host it yourself via CDP)** — this is exactly what `doorman_selftest.sh` automates: serve the bridge on `localhost`, launch Chrome with a private `--remote-debugging-port`, then over CDP set `#bs` and call `host()`, and read back `_state.id` + `_state.token`. Leave Chrome running; killing it ends the session.
 
@@ -136,7 +137,10 @@ The kite tab exposes `window.kite.outbox`/`.inbox`; you drain outgoing twin-chat
 
 ```
 twin-chat envelope : {schema:"rapp-twin-chat/1.0", from_rappid, to_rappid, utc, nonce, kind, payload, facets}
-                     kind ∈ { say | console }
+                     kind ∈ { say | console }   // doorman-operated subset
+                     // rapp-neighborhood-protocol §6b defines the full set:
+                     //   say · share-fact · share-egg · request-fact · ack · console.
+                     // The doorman drives {say, console}; it relays (does not reject) the rest.
                      say payload     : {text, [conversation_history], [session_id]}
                      console payload : {method, args:[...]}   // method e.g. "eval","run","chat","agents","health","secrets.list"
 response           : {schema:"rapp-twin-chat-response/1.0", channel, status, response, envelope}
